@@ -1,0 +1,478 @@
+<?
+//MX Widgets3 include
+require_once('../includes/wdg/WDG.php');
+
+	require('control.php');
+
+	function redo_invoices($billrun_date){
+	
+		$billing = new wimax_billing();
+		$invoicing = new wimax_invoicing();
+		$myquery = new uniquequerys();
+	
+		//Getting Bill run and start dates
+		$result = $myquery->uniquequery("SELECT LAST_DAY('$billrun_date') as thedate");
+		$billrun_date = $myquery->Unescape($result[thedate]);
+		$result = $myquery->uniquequery("SELECT concat(date_format(LAST_DAY('$billrun_date'),'%Y-%m-'),'01') as period_start");
+		$period_start_date = $result[period_start];
+		
+		$accountid_query = "select distinct parent_id from wimax_billing where date_format(entry_date,'%Y-%m-') = date_format('$billrun_date','%Y-%m-')";
+		echo $accountid_query."<br>";
+		$ids = $myquery->multiplerow_query($accountid_query);
+		
+		$i = 0;
+		foreach($ids as $id_row){
+			$account_ids[$i++] = $id_row[parent_id];
+		}
+		
+		//Populating parent contact Information	
+		foreach($account_ids as $id){
+			echo "Populating contact info for account number ".$id."<br>";
+			$contact_query = "
+							SELECT 
+							  accounts.name,
+							  accounts_cstm.contact_person_c,
+							  accounts_cstm.billing_add_strt_c,
+							  accounts_cstm.billing_add_area_c,
+							  accounts_cstm.billing_add_town_c,
+							  accounts_cstm.billing_add_plot_c,
+							  accounts_cstm.billing_add_district_c,
+							  accounts_cstm.preferred_username_c,
+							  accounts_cstm.mem_id_c as parent_id,
+							  accounts_cstm.service_type_internet_c as service_type,
+							  accounts_cstm.crn_c,
+							  cn_contracts.start_date
+							FROM
+							 accounts
+							 INNER JOIN accounts_cstm ON (accounts.id=accounts_cstm.id_c)
+							 INNER JOIN cn_contracts ON (accounts.id=cn_contracts.account)
+							WHERE
+							  accounts_cstm.crn_c = '$id' AND
+							  cn_contracts.deleted = '0' AND
+							  accounts_cstm.service_type_internet_c = 'Postpaid'
+			";
+			//echo $contact_query."<br>";
+			
+			$parent_data = $myquery->uniquequery($contact_query);
+			
+			//print_r($parent_data); echo "<br><br>"; exit;
+			
+			if(strlen($parent_data[crn_c]) != 0){
+				$parent_accts[$id][xtra][Other_details][username] = $parent_data[preferred_username_c];
+				$parent_accts[$id][xtra][Other_details][account_name] = $parent_data[name];
+				$parent_accts[$id][xtra][Other_details][individual] = 'Mr/Mrs/Ms '.$parent_data[contact_person_c];
+				$parent_accts[$id][xtra][Other_details][physical_address] =	$parent_data[billing_add_plot_c]."<br>".
+																		$parent_data[billing_add_strt_c]."<br>".
+																		$parent_data[billing_add_district_c]."<br>";
+				$parent_accts[$id][xtra][Other_details][account_number] = $parent_data[crn_c];
+				$parent_accts[$id][xtra][Other_details][invoice_date] = $billrun_date;
+				$parent_accts[$id][xtra][Other_details][invoice_currency] = 'USD';
+				$parent_accts[$id][xtra][Other_details][invoice_start] = $period_start_date;
+				$parent_accts[$id][xtra][Other_details][invoice_end] = $billrun_date;
+				$parent_accts[$id][xtra][Other_details][invoice_due_date] = AddDays($billrun_date,14);
+				$parent_accts[$id][xtra][Other_details][Title] = 'TAX INVOICE';
+				$parent_accts[$id][xtra][Other_details][contract_start] = $parent_data[start_date];
+				$parent_accts[$id][xtra][Other_details][service_type] = $parent_data[service_type];
+				
+				//Summing up payments, charges and adjustments per parent account
+				$select_conditions = array(
+										array("entry_date","<=",$billrun_date),
+										array("entry_date",">=",$period_start_date),
+										array("parent_id","=",$id)
+										);
+				
+				$billing_data = $billing->GetList($select_conditions);
+				foreach($billing_data as $billing_row){
+					$billing_row->entry = unserialize($billing_row->entry);
+					if($billing_row->entry_type == 'Payment'){
+						$parent_accts[$id][payments_sum] += $billing_row->amount;
+					}
+		
+					$item_array[account_number] = $parent_accts[$id][xtra][Other_details][account_number];
+					
+					if($billing_row->entry_type == 'Charges'){
+						$item_array[item] = $billing_row->entry[entry];
+						$item_array[grouping] = $billing_row->entry[grouping];
+						if($billing_row->entry[entry] != 'Equipment Deposit'){
+							$parent_accts[$id][Charges] += $billing_row->amount;
+							$item_array[value] = ($billing_row->amount/1.18);
+							if($parent_accts[$id][xtra]['Break Down'][items]){
+								array_push($parent_accts[$id][xtra]['Break Down'][items], $item_array);
+							} else {
+								$parent_accts[$id][xtra]['Break Down'][items][0] = $item_array;
+							}
+						}else{
+							$parent_accts[$id][xtra]['Break Down'][untaxed][total] += $billing_row->amount;
+							$item_array[value] = $billing_row->amount;
+							if($parent_accts[$id][xtra]['Break Down'][untaxed][items]){
+								array_push($parent_accts[$id][xtra]['Break Down'][untaxed][items], $item_array);
+							} else {
+								$parent_accts[$id][xtra]['Break Down'][untaxed][items][0] = $item_array;
+							}
+						}
+					}
+				
+					if($billing_row->entry_type == 'Services'){
+						$parent_accts[$id][Services] += $billing_row->amount;
+						$item_array[item] = $billing_row->entry[entry];
+						$item_array[grouping] = $billing_row->entry[grouping];
+						$item_array[value] = $billing_row->amount/1.18;
+						if($parent_accts[$id][xtra]['Break Down'][items]){
+							array_push($parent_accts[$id][xtra]['Break Down'][items], $item_array);
+						} else {
+							$parent_accts[$id][xtra]['Break Down'][items][0] = $item_array;
+						}
+					}
+						
+					if($billing_row->entry_type == 'Adjustment'){
+						$item_array[item] = $billing_row->entry[entry];
+						$item_array[grouping] = $billing_row->entry[grouping];
+						if(!(($billing_row->entry[grouping] == 'Cash Discount') || ($billing_row->entry[grouping] == 'Waiver on Equipment'))){
+							$item_array[value] = $billing_row->amount/1.18;
+							if($parent_accts[$id][xtra]['Break Down'][items]){
+								array_push($parent_accts[$id][xtra]['Break Down'][items], $item_array);
+							} else {
+								$parent_accts[$id][xtra]['Break Down'][items][0] = $item_array;
+							}
+							$parent_accts[$id][adjustments_sum] += $item_array[value];
+						}else{
+							$item_array[value] = $billing_row->amount;
+							if($parent_accts[$id][xtra]['Break Down'][other_adjustments]){
+								array_push($parent_accts[$id][xtra]['Break Down'][other_adjustments], $item_array);
+							} else {
+								$parent_accts[$id][xtra]['Break Down'][other_adjustments][0] = $item_array;
+							}
+							$parent_accts[$id][other_adjustments] += $item_array[value];
+						}
+					}	
+				}
+			}else{
+				echo "No Post paid Data  for account number -> ".$id."<br>";
+			}
+		}
+		
+		//generating and saving the invoices per parent account
+		if(count($parent_accts) != 0){
+			foreach($parent_accts as $parent_id => $parent_acct){
+				$parent_acct[previous_balance] = previousBalance($parent_id,$period_start_date);
+				$parent_acct[xtra]['Break Down'][sub_total] = ($parent_acct[Services]/1.18) + ($parent_acct[Charges]/1.18) + $parent_acct['adjustments_sum'];
+				$parent_acct[xtra]['Break Down'][total_vat] = $parent_acct[xtra]['Break Down'][sub_total] * 0.18;
+				$parent_acct[xtra]['Break Down'][total_charges] = $parent_acct[xtra]['Break Down'][sub_total] + $parent_acct[xtra]['Break Down'][total_vat] + $parent_acct[xtra]['Break Down'][untaxed][total];
+				$parent_acct[amount_payable] = 	$parent_acct[previous_balance] +
+															$parent_acct[payments_sum] +
+															$parent_acct[other_adjustments] + 
+															$parent_acct[xtra]['Break Down'][total_charges];
+				$parent_acct[xtra][Other_details][generated_by] = 'Bill Run';
+				if($parent_acct[amount_payable] < 0 ){
+					$parent_acct[xtra][Other_details][fined_payable] = -$parent_acct[amount_payable] + 0;
+				}
+			
+				$invoicing->generation_date = date('Y-m-d');
+				$invoicing->username = $parent_acct[xtra][Other_details][username];
+				$invoicing->billing_date = $billrun_date;
+				$invoicing->previous_balance = $parent_acct[previous_balance];
+				$invoicing->payments_sum = $parent_acct[payments_sum];
+				$invoicing->adjustments_sum = $parent_acct[other_adjustments];
+				$invoicing->charges_sum = $parent_acct[xtra]['Break Down'][total_charges];
+				$invoicing->amount_payable = $parent_acct[amount_payable];
+				$invoicing->details = serialize($parent_acct[xtra]);
+				$invoicing->invoice_number = generate_invoice_no('');
+					
+				if(	!(($invoicing->previous_balance == 0)&&
+					($invoicing->charges_sum == 0)&&
+					($invoicing->payments_sum == 0)&&
+					($invoicing->adjustments_sum == 0)&&
+					($invoicing->amount_payable == 0)
+					)){
+					
+					$checks = array(
+									array('username','=',$invoicing->username),
+									array('billing_date','=',$invoicing->billing_date)
+									);
+					
+					$check_object = $invoicing->GetList($checks);
+					
+					//echo ++$GG.' ->> '.test_invoice($invoicing).'<p style="page-break-before: always">';			
+					if(count($check_object) == 0){
+					$saved_id = $invoicing->SaveNew();
+					//echo "Uncomment the save instruction <br>";
+						if($saved_id){
+							$invoices[saved][$id] = $parent_accts[$id];
+							echo "Saving Invoice number ".$invoicing->invoice_number." for ".$invoicing->username." <br>";
+						}else{
+							$invoices[not_saved][$id] = $parent_accts[$id];
+							echo "Invoice number ".$invoicing->invoice_number." for ".$invoicing->username." Not saved <br>";
+						}
+					}else{
+						echo "Invoice number ".$invoicing->invoice_number." for ".$invoicing->username." Already exists Updating now ...<br>";
+						$check_object = $check_object[0];
+						$invoicing->invoice_number = $check_object->invoice_number;
+						$invoicing->id = $check_object->id;
+						$saved_id = $invoicing->Save();
+					}
+				}
+			}
+		}else{
+			echo "No accounts specified <br>";
+		}
+		
+		return $invoices[not_saved];
+	}
+	
+	function monthly_bill($billrun_date, $account_ids){
+	
+		$billing = new wimax_billing();
+		$invoicing = new wimax_invoicing();
+		$myquery = new uniquequerys();
+	
+		//Getting Bill run and start dates
+		if($billrun_date == ''){
+			$result = $myquery->uniquequery("SELECT LAST_DAY(now()) as today");
+			$billrun_date = $myquery->Unescape($result[today]);
+			$result = $myquery->uniquequery("SELECT concat(date_format(LAST_DAY(now()),'%Y-%m-'),'01') as period_start");
+			$period_start_date = $myquery->Unescape($result[period_start]);
+		}
+		else{
+			$result = $myquery->uniquequery("SELECT LAST_DAY('$billrun_date') as thedate");
+			$billrun_date = $myquery->Unescape($result[thedate]);
+			$result = $myquery->uniquequery("SELECT concat(date_format(LAST_DAY('$billrun_date'),'%Y-%m-'),'01') as period_start");
+			$period_start_date = $myquery->Unescape($result[period_start]);
+		}
+		
+		foreach($account_ids as $id){
+			//Populate service charges and do appropriate billing on ALL (Post and Pre Paid) parent account
+			$acct_data = $myquery->uniquequery("
+						SELECT 
+						  accounts.name,
+						  accounts_cstm.billing_add_strt_c,
+						  accounts_cstm.billing_add_area_c,
+						  accounts_cstm.billing_add_town_c,
+						  accounts_cstm.billing_add_plot_c,
+						  accounts_cstm.billing_add_district_c,
+						  accounts_cstm.preferred_username_c,
+						  accounts_cstm.mem_id_c as parent_id,
+						  accounts_cstm.crn_c,
+						  accounts_cstm.service_type_internet_c as service_type,
+						  cn_contracts.start_date,
+						  cn_contracts.expiry_date,
+						  ps_products.name as product_name,
+						  ps_products.price as product_price,
+						  ps_products_cstm.product_grouping_c as grouping
+						FROM
+						 accounts
+						 INNER JOIN accounts_cstm ON (accounts.id=accounts_cstm.id_c)
+						 INNER JOIN cn_contracts ON (accounts.id=cn_contracts.account)
+						 INNER JOIN ps_products ON (accounts_cstm.shared_packages_c=ps_products.name) OR (accounts_cstm.download_bandwidth_c=ps_products.name)
+						 INNER JOIN ps_products_cstm ON (ps_products.id=ps_products_cstm.id_c)
+						where
+						  accounts.deleted = '0' AND 
+						  cn_contracts.deleted = '0' AND
+						  ps_products.deleted != '1' AND
+						  accounts_cstm.mem_id_c = '$id'
+						"); /*
+						AND accounts_cstm.preferred_username_c = 'moses.bashasha'*/
+		
+		//Populate service charges and do appropriate billing on each parent account.
+		
+			//creating an array of all including child POST PAID accounts regardless of services per account ie group by 
+			//adding VAT
+			$acct_data[product_price] = $acct_data[product_price] * 1.18;
+			
+			//BILLING ALL ACCOUNTS
+			$billing->entry_id = generateRecieptNo('');
+			$billing->parent_id = $acct_data[parent_id];
+			$billing->username = $acct_data[preferred_username_c];
+			$billing->bill_start = $acct_data[start_date];
+			$billing->bill_end = $acct_data[expiry_date];
+			$billing->billing_date = $billrun_date;
+			$billing->entry_date = $billrun_date;
+			$billing->currency = 'USD';
+			$billing->entry_type = 'Services';
+				$entry[grouping] = $acct_data[grouping];
+				$entry[entry] = $acct_data[product_name];
+				$entry[details] = '';
+			$billing->entry = serialize($entry);
+			$billing->amount = -$acct_data[product_price];
+			$billing->balance = newBalance($billing->amount,$billing->parent_id, $billing->entry_date);
+			$billing->user = 'Bill Run';
+		
+			$check_object = $billing->GetList(array(
+												array('entry_date','=',$billrun_date),
+												array('username','=',$billing->username),
+												array('entry_type','=',$billing->entry_type)
+													)
+												); $check_object = $check_object[0];
+			if(count($check_object) != 0){
+				$billing->id = $check_object->id;
+				//print_r($check_object);	echo "<br> ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++ <br>";
+				echo "!! Charge is Already there. Updating the entry <br>"; print_r($acct_data); echo "<br><br>";
+				$id = Adjust_Balances_and_Save($billing);
+			}else{
+				if($billing->amount != ''){
+					//echo ++$r." --->> "; print_r($billing); echo "<br>";
+					echo "!! Saving regular Charge <br>";
+					$id = Adjust_Balances_and_Save($billing);
+				}else{
+					echo "!! Charge is blank <br>";
+				}
+			}
+		
+		}
+	}
+	
+	function display_accounts_multiselect($service_type){
+	$myquery = new uniquequerys();
+	
+	//This selects the child account
+	
+	$query = "SELECT 
+		accounts.name, 
+		accounts_cstm.crn_c as acc_num 
+		FROM 
+		accounts 
+		INNER JOIN accounts_cstm ON (accounts_cstm.id_c=accounts.id)
+		INNER JOIN cn_contracts ON (accounts.id=cn_contracts.account) 
+		WHERE 
+		accounts_cstm.mem_id_c  != '' AND 
+		cn_contracts.deleted = '0'
+		";
+	
+	if($service_type != ''){
+		$query .= " and accounts_cstm.service_type_internet_c = '$service_type'";
+	}
+	
+	$query .= " order by name asc";
+	
+	$accounts_list = $myquery->multiplerow_query($query);
+	
+	$html = '<select name="account_ids[]" size="10" multiple="multiple" id="account_ids[]" class="style11">';
+	$html .= '<option value="" selected="selected"></option>';
+	foreach($accounts_list as $account){
+		$html .= '<option value="'.$account[acc_num].'">'.$account[name].'</option>';
+	}
+	$html .= '</select>';
+	
+	return $html;
+	}
+	
+	switch($_POST[button]){
+		case 'balances':
+			echo "running the repair balances ...<br>";
+			repairbals();
+			break;
+		case 'bill':
+			if(($_POST[bill_date]) && ($_POST[account_ids])){
+				monthly_bill($_POST[bill_date], $_POST[account_ids]);
+			}
+			break;
+		case 're_invoice':
+			if($_POST[reinvoice_date]){
+				echo "Redoing invoices ...<br>";
+				$invoices = redo_invoices($_POST[reinvoice_date]);
+			}
+			break;
+		case 'billrun':
+			if($_REQUEST['billrun_date'] != ''){
+				$invoices = billrun_invoiceGeneration($_REQUEST['billrun_date']);
+			}
+			break;
+	}
+
+	print_r($_REQUEST);
+	if($invoices){
+		echo "The following Invoice Data was not saved<br>";
+		foreach($invoices as $invoice){
+			foreach($invoice as $key => $lock){
+				echo "The `".$key."` is <br>";
+				if(is_array($lock)){
+					print_r($lock); echo "<br><br>";
+				}else{
+					echo $lock."<br><br>";
+				}
+			}
+		}
+	}
+?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:wdg="http://ns.adobe.com/addt">
+<head>
+<title>Invoice Generation</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<style type="text/css">
+td img {display: block;}.style1 {
+	font-family: Arial, Helvetica, sans-serif;
+	font-size: 12px;
+	font-weight: bold;
+}
+.style2 {font-size: 12px; font-family: Arial, Helvetica, sans-serif;}
+.style4 {font-size: 14}
+.style5 {font-size: 14px; font-family: Arial, Helvetica, sans-serif; }
+.style6 {font-family: Arial, Helvetica, sans-serif; font-size: 14px; font-weight: bold; }
+</style>
+<!--Fireworks CS3 Dreamweaver CS3 target.  Created Mon Oct 20 15:38:49 GMT+0300 2008-->
+<script type="text/javascript" src="../includes/common/js/sigslot_core.js"></script>
+<script src="../includes/common/js/base.js" type="text/javascript"></script>
+<script src="../includes/common/js/utility.js" type="text/javascript"></script>
+<script type="text/javascript" src="../includes/wdg/classes/MXWidgets.js"></script>
+<script type="text/javascript" src="../includes/wdg/classes/MXWidgets.js.php"></script>
+<script type="text/javascript" src="../includes/wdg/classes/Calendar.js"></script>
+<script type="text/javascript" src="../includes/wdg/classes/SmartDate.js"></script>
+<script type="text/javascript" src="../includes/wdg/calendar/calendar_stripped.js"></script>
+<script type="text/javascript" src="../includes/wdg/calendar/calendar-setup_stripped.js"></script>
+<script src="../includes/resources/calendar.js"></script>
+<link href="../includes/skins/mxkollection3.css" rel="stylesheet" type="text/css" media="all" />
+<link href="css/styles.css" rel="stylesheet" type="text/css" />
+</head>
+<body bgcolor="#ffffff">
+
+<table width="100%" border="0" cellspacing="1">
+  <tr>
+    <td>
+    <fieldset>
+    <form id="inv" name="inv" method="post" action="invoice.php">
+      <span class="style14">Select Invoice Date</span> 
+      <label>
+      <input name="billrun_date" class="style11" id="billrun_date" value="" wdg:mondayfirst="false" wdg:subtype="Calendar" wdg:mask="<?php echo $KT_screen_date_format; ?>" wdg:type="widget" wdg:singleclick="false" wdg:restricttomask="no" wdg:readonly="true" />
+      </label>
+      <? display_accounts_multiselect('Postpaid') ?>
+      <label>
+        <input name="button" type="submit" class="style14" id="button" value="billrun" />
+      </label>
+      </form>
+     </fieldset>
+	</td>
+  </tr>
+  <tr>
+      <td>
+   <fieldset>
+  	<form id="inv" name="inv" method="post" action="invoice.php">
+      <span class="style14">Select Invoice Redo Date</span> 
+      <label>
+      <input name="reinvoice_date" class="style11" id="reinvoice_date" value="" wdg:mondayfirst="false" wdg:subtype="Calendar" wdg:mask="<?php echo $KT_screen_date_format; ?>" wdg:type="widget" wdg:singleclick="false" wdg:restricttomask="no" wdg:readonly="true" />
+      </label>
+      <label>
+        <input name="button" type="submit" class="style14" id="button" value="re_invoice" />
+      </label>
+     </form>
+  </fieldset>
+     </td>
+  </tr>
+  <tr>
+  <td>
+   <fieldset>
+  	<form id="bill" name="bill" method="post" action="invoice.php">
+      <span class="style14">Select Bill Date</span> 
+      <label>
+      <input name="bill_date" class="style11" id="bill_date" value="" wdg:mondayfirst="false" wdg:subtype="Calendar" wdg:mask="<?php echo $KT_screen_date_format; ?>" wdg:type="widget" wdg:singleclick="false" wdg:restricttomask="no" wdg:readonly="true" />
+      </label>
+      <label>
+        <input name="button" type="submit" class="style14" id="button" value="bill" />
+      </label>
+      </form>
+    </fieldset>
+      </td>
+  </tr>
+ </table>
+
+</body>
+</html>

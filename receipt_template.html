@@ -1,0 +1,156 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+		<html xmlns="http://www.w3.org/1999/xhtml">
+		<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		<title>Receipt: No. '.$receipt_data[db_data]->entry_id.'</title>
+		</head>
+		<body>
+		<table width="750" border="0" cellspacing="2" cellpadding="2" align="center">
+		  <tr>
+			<td><img src="../images/receiptlogo.jpg" height="150" /></td>
+		  </tr>
+		
+		  <tr>
+			<td>&nbsp;</td>
+			</tr>
+		  <tr>
+			<td align="center"><span style="font-size:20px; text-decoration:underline; font-weight:bold">RECEIPT</span></td>
+			</tr>
+		  <tr>
+			<td><table width="100%" border="0" cellspacing="2" cellpadding="2">
+		
+			  <tr>
+				<td width="45%" valign="top"><table width="100%" border="0" cellspacing="2" cellpadding="2">
+				  <tr>
+					<td><span style="text-decoration:underline; font-weight:bold">CUSTOMER:</span></td>
+				  </tr>
+				  <tr>
+					<td><strong>'.$receipt_data[xtra]['account name'].'</strong></td>
+				  </tr>
+		
+				  <tr>
+					<td><strong>'.$receipt_data[xtra]['physical address'].'</strong></td>
+				  </tr>
+				  
+				</table></td>
+				<td width="10%">&nbsp;</td>
+				<td width="45%"><table width="100%" border="0" cellspacing="2" cellpadding="2">
+				  <tr>
+					<td><span style="text-decoration:underline; font-weight:bold">WARID Telecom (U) Ltd:</span></td>
+		
+				  </tr>
+				  <tr>
+					<td><strong>VAT REGISTRATION NO: 44601-Z</strong></td>
+				  </tr>
+				  <tr>
+					<td><strong>TIN NO: B06-1009-9500-X</strong></td>
+				  </tr>
+				</table></td>
+		
+			  </tr>
+			</table></td>
+			</tr>
+		  <tr>
+			<td>&nbsp;</td>
+			</tr>
+		  <tr>
+			<td ><table width="100%" border="0" cellspacing="2" cellpadding="2">
+			  <tr>
+		
+				<td width="45%" valign="top"><table width="100%" border="0" cellspacing="2" cellpadding="2">
+				  <tr>
+					<td><span style="font-weight:bold">Account Number:</span>'.$receipt_data[xtra]['account number'].'</td>
+				  </tr>
+				  <tr>
+					<td align="right"></td>
+				  </tr>
+				  
+				</table></td>
+				<td width="10%">&nbsp;</td>
+				<td width="45%"><table width="100%" border="0" cellspacing="2" cellpadding="2">
+				  <tr>
+					<td><span style="font-weight:bold">RECEIPT NO: '.$receipt_data[db_data]->entry_id.'</span></td>
+				  </tr>
+		
+				  <tr>
+					<td><strong>PAYMENT DATE:</strong> <span style="font-weight:bold">'.date("F j, Y").'</span></td>
+				  </tr>
+				  <tr>
+					<td>&nbsp;</td>
+				  </tr>
+				</table></td>
+		
+			  </tr>
+			</table></td>
+			</tr>
+		  <tr>
+			<td>&nbsp;</td>
+			</tr>
+		  <tr>
+			<td><table width="100%" cellspacing="0" cellpadding="4">
+			  <tr bgcolor="#CCCCCC" style="font-weight:bold">
+		
+				<td style="border:#000000 1px solid;" align="center">INVOICE NUMBER</td>
+				<td style="border:#000000 1px solid;" align="center" width="50%">DESCRIPTION</td>
+				<td style="border:#000000 1px solid;" align="center">CURRENCY</td>
+				<td style="border:#000000 1px solid;" align="center">AMOUNT</td>
+			  </tr>
+					<tr>
+				<td style="border:#000000 1px solid;" align="center">'.$receipt_data[db_data]->matched_invoice.'</td>
+				<td style="border:#000000 1px solid;" align="center">'.$receipt_data[db_data]->entry.'</td>
+		
+				<td style="border:#000000 1px solid;" align="center">'.$receipt_data[db_data]->currency.'</td>
+				<td style="border:#000000 1px solid;" align="center">'.accounts_format($receipt_data[db_data]->amount).'</td>
+			  </tr>
+			</table></td>
+			</tr>
+		  <tr>
+			<td>&nbsp;</td>
+			</tr>
+		
+		  <tr>
+			<td><table width="100%" border="0" cellspacing="2" cellpadding="2">
+			  <tr>
+				<td width="45%"><table width="100%" border="0" cellspacing="2" cellpadding="2">
+				  <tr>
+					<td align="right" width="50%"><strong>CASHIERS NAME:</strong></td>
+					<td style="border-bottom: 1px #000000 solid;" width="50%">'.$receipt_data[db_data]->user.'</td>
+				  </tr>
+		
+		
+				</table></td>
+				<td width="10%">&nbsp;</td>
+				<td width="45%"><table width="100%" border="0" cellspacing="2" cellpadding="2">
+				  <tr>
+					<td align="right" width="50%"><strong>SIGNATURE:</strong></td>
+					<td style="border-bottom: 1px #000000 solid;" width="50%">&nbsp;</td>
+				  </tr>
+				</table></td>
+		
+			  </tr>
+			</table></td>
+			</tr>
+		  <tr>
+			<td>&nbsp;</td>
+			</tr>
+		  <tr>
+			<td height="50">&nbsp;</td>
+			</tr>
+		
+		  <tr>
+			<td><table width="100%" border="0" cellspacing="0" cellpadding="2" align="center" style="font-size:10px; font-family:Arial, Helvetica, sans-serif">
+			  <tr>
+				<td align="center">Warid Telecom Uganda Ltd</td>
+			  </tr>
+			  <tr>
+				<td align="center">Contact Us: email at customercare@waridtel.co.ug, Call at 100 or 0700100100, Website: www.waridtel.co.ug</td>
+			  </tr>
+		
+			  <tr>
+				<td align="center">Plot 16A, Clement Hill Road, P. O. Box 70665, Kampala</td>
+			  </tr>
+			</table></td>
+		  </tr>
+		</table>
+		</body>
+		</html>
